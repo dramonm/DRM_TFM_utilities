@@ -1,0 +1,302 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""To use this script you can pass the following attributes:
+            --querysearch: a query text to be matched
+--exclude-words-from-file: a file with a list of words to exclude
+               --username: a username or a list of usernames (comma or space separated)
+                           of a specific twitter account(s) (with or without @)
+     --username-from-file: a file with a list of usernames
+                  --since: a lower bound date in UTC (yyyy-mm-dd)
+                  --until: an upper bound date in UTC (yyyy-mm-dd) (not included)
+             --minreplies: a minimum number of replies for a tweet
+               --minfaves: a minimum number of favorites for a tweet
+            --minretweets: a minimum number of retweets for a tweet
+                   --near: a reference location area from where tweets were generated
+                 --within: a distance radius from "near" location (e.g. 15mi)
+              --toptweets: only the tweets provided as top tweets by Twitter (no parameters required)
+              --maxtweets: the maximum number of tweets to retrieve
+                   --lang: the language of tweets
+                  --emoji: "ignore" (the default, discards emojis), "unicode"
+                           or "named" (replaces with "Emoji[Name of emoji]")
+                 --output: a filename to export the results (default is "output_got.csv")
+                           Pass a '.gz' suffix to have it gzipped.
+                  --debug: outputs debug information to standard error stream
+
+Examples:
+
+# Example 1 - Get tweets by query search:
+GetOldTweets3 --querysearch "europe refugees" --maxtweets 10
+
+# Example 1 - Get the last 10 top tweets by username:
+GetOldTweets3 --username "barackobama" --toptweets --maxtweets 10
+
+# Example 3 - Get tweets by username and bound dates (until date is not included) and preserve emojis as unicode:
+GetOldTweets3 --username "barackobama" --since 2015-09-10 --until 2015-09-12 --maxtweets 10 --emoji unicode
+
+# Example 4 - Get tweets by several usernames:
+GetOldTweets3 --username "BarackObama,AngelaMerkeICDU" --usernames-from-file userlist.txt --maxtweets 10
+
+# Example 5 - Get tweets by language:
+GetOldTweets3 --querysearch "bitcoin" --lang cn --maxtweets 10
+
+# Example 6 - Get tweets by place:
+GetOldTweets3 --querysearch "bitcoin" --near "Berlin, Germany" --within 25km --maxtweets 10
+
+# Example 7 - Get tweets by geo coordinates:
+GetOldTweets3 --querysearch "museum" --near "55.75, 37.61" --within 40km --maxtweets 10
+
+# Example 8 - Get tweets by minimum number of replies:
+GetOldTweets3 --querysearch "bitcoin" --minreplies 10 --maxtweets 10
+
+# Example 9 - Get tweets by minimum number of favorites:
+GetOldTweets3 --querysearch "bitcoin" --minfaves 10 --maxtweets 10
+
+# Example 10 - Get tweets by minimum number of retweets:
+GetOldTweets3 --querysearch "bitcoin" --minretweets 10 --maxtweets 10
+
+# Example 11 - Get tweets by excluding tweets with any word of a list:
+GetOldTweets3 --querysearch "bitcoin" --exclude-words-from-file excludewords.txt --maxtweets 10
+"""
+
+from functools import partial
+import csv
+import gzip
+import os, sys, re, getopt
+import traceback
+
+if sys.version_info[0] < 3:
+    raise Exception("Python 2.x is not supported. Please upgrade to 3.x")
+
+import GetOldTweets3 as got
+
+def main(argv):
+    if len(argv) == 0:
+        print('You must pass some parameters. Use \"-h\" to help.')
+        return
+
+    if len(argv) == 1 and argv[0] == '-h':
+        print(__doc__)
+        return
+
+    try:
+        opts, args = getopt.getopt(argv, "", ("querysearch=",
+                                              "exclude-words-from-file=",
+                                              "username=",
+                                              "usernames-from-file=",
+                                              "since=",
+                                              "until=",
+                                              "minreplies=",
+                                              "minfaves=",
+                                              "minretweets=",
+                                              "near=",
+                                              "within=",
+                                              "toptweets",
+                                              "maxtweets=",
+                                              "lang=",
+                                              "output=",
+                                              "emoji=",
+                                              "debug"))
+
+        tweetCriteria = got.manager.TweetCriteria()
+        outputFileName = "output_got.csv"
+
+        debug = False
+        usernames = set()
+        username_files = set()
+        exclude_words_files = set()
+        for opt, arg in opts:
+            if opt == '--querysearch':
+                tweetCriteria.querySearch = arg
+
+            elif opt == '--username':
+                usernames_ = [u.lstrip('@') for u in re.split(r'[\s,]+', arg) if u]
+                usernames_ = [u.lower() for u in usernames_ if u]
+                usernames |= set(usernames_)
+
+            elif opt == '--usernames-from-file':
+                username_files.add(arg)
+
+            elif opt == '--exclude-words-from-file':
+                exclude_words_files.add(arg)
+
+            elif opt == '--since':
+                tweetCriteria.since = arg
+
+            elif opt == '--until':
+                tweetCriteria.until = arg
+
+            elif opt == '--minreplies':
+                tweetCriteria.minReplies = arg
+
+            elif opt == '--minfaves':
+                tweetCriteria.minFaves = arg
+
+            elif opt == '--minretweets':
+                tweetCriteria.minRetweets = arg
+
+            elif opt == '--near':
+                geocode = arg.split(',')
+                try:
+                    if len(geocode) != 2:
+                        raise
+                    lat, lon = geocode[0].strip(), geocode[1].strip()
+                    if lat[-1].lower() == 'n':
+                        lat = float(lat[:-1])
+                    elif lat[-1].lower() == 's':
+                        lat = -float(lat[:-1])
+                    else:
+                        lat = float(lat)
+
+                    if lon[-1].lower() == 'e':
+                        lon = float(lon[:-1])
+                    elif lon[-1].lower() == 'w':
+                        lon = -float(lon[:-1])
+                    else:
+                        lon = float(lon)
+                    if lat < -180 or lat > 180:
+                        raise
+                    if lon < -90 or lon > 90:
+                        raise
+                    tweetCriteria.lat = lat
+                    tweetCriteria.lon = lon
+                except:
+                    tweetCriteria.near = arg
+
+            elif opt == '--within':
+                tweetCriteria.within = arg
+
+            elif opt == '--toptweets':
+                tweetCriteria.topTweets = True
+
+            elif opt == '--maxtweets':
+                tweetCriteria.maxTweets = int(arg)
+
+            elif opt == '--lang':
+                tweetCriteria.lang = arg
+
+            elif opt == '--emoji':
+                if arg in [ "ignore", "unicode", "named" ]:
+                    tweetCriteria.emoji = arg
+                else:
+                    raise Exception("Invalid option, --emoji must be one of 'ignore', 'unicode', 'or named'.")
+
+            elif opt == '--output':
+                outputFileName = arg
+
+            elif opt == '--debug':
+                debug = True
+
+        if debug:
+            print(' '.join(sys.argv))
+            print("GetOldTweets3", got.__version__)
+
+        if username_files:
+            for uf in username_files:
+                if not os.path.isfile(uf):
+                    raise Exception("File not found: %s"%uf)
+                with open(uf) as f:
+                    data = f.read()
+                    data = re.sub('(?m)#.*?$', '', data)  # remove comments
+                    usernames_ = [u.lstrip('@') for u in re.split(r'[\s,]+', data) if u]
+                    usernames_ = [u.lower() for u in usernames_ if u]
+                    usernames |= set(usernames_)
+                    print("Found %i usernames in %s" % (len(usernames_), uf))
+
+        if exclude_words_files:
+            exclude_words = sum([open(ewf).read().split() for ewf in exclude_words_files], [])
+            tweetCriteria.excludeWords = exclude_words
+
+        if usernames:
+            if len(usernames) > 1:
+                tweetCriteria.username = usernames
+                if len(usernames)>20 and tweetCriteria.maxTweets > 0:
+                    maxtweets_ = (len(usernames) // 20 + (len(usernames)%20>0)) * tweetCriteria.maxTweets
+                    print("Warning: due to multiple username batches `maxtweets' set to %i" % maxtweets_)
+            else:
+                tweetCriteria.username = usernames.pop()
+
+        if outputFileName.endswith('.gz'):
+            get_output_file = partial(gzip.open, outputFileName, "wt")
+        else:
+            get_output_file = partial(
+                open, outputFileName, "w+", encoding="utf8")
+
+        with get_output_file() as outputFile:
+            csvFile = csv.writer(outputFile, delimiter='\t', lineterminator='\n')
+            #csvFile.writerow(['date', 'username', 'to', 'replies', 'retweets',
+            #                  'favorites', 'text', 'geo', 'mentions', 'hashtags',
+            #                  'id', 'permalink'])
+            csvFile.writerow(['id tweet', 'date', 'author', 'text', 'app', 'id user', 'followers',
+                                'following', 'stauses', 'location', 'urls', 'geolocation', 'name',
+                                'description', 'url_media', 'type media', 'quoted', 'relation',
+                                'replied_id', 'user replied', 'retweeted_id', 'user retweeted',
+                                'quoted_id', 'user quoted', 'first HT', 'lang', 'created_at', 'verified', 'avatar', 'link'])
+
+            cnt = 0
+            def receiveBuffer(tweets):
+                nonlocal cnt
+
+                for t in tweets:
+                    data = [t.idTweet,
+                        t.date.strftime("%Y-%m-%d %H:%M:%S"),
+                        t.author,
+                        t.text,
+                        t.app,
+                        t.authorId,
+                        t.authorFollowers,
+                        t.authorFollowing,
+                        t.authorNTweets,
+                        t.authorLocation,
+                        t.tweetUrls,
+                        t.tweetGeo,
+                        t.authorScreenName,
+                        t.authorBio,
+                        t.tweetURLMedia,
+                        t.tweetTypeMedia,
+                        t.quote,
+                        t.tweeetsRelation,
+                        t.repliedTweetId,
+                        t.userRepliedTo,
+                        t.retweetedTweetId,
+                        t.userRetweeted,
+                        t.quotedTweetId,
+                        t.userQuoted,
+                        t.firstHT,
+                        t.lang,
+                        t.authorCreationDate,
+                        t.isVerified or False,
+                        t.authorAvatar,
+                        t.permalink]
+
+                    csvFile.writerow(map(str, data))
+
+                outputFile.flush()
+                cnt += len(tweets)
+
+                if sys.stdout.isatty():
+                    print("\rSaved %i"%cnt, end='', flush=True)
+                else:
+                    print(cnt, end=' ', flush=True)
+
+            print("Downloading tweets...")
+            got.manager.TweetManager.getTweets(tweetCriteria, receiveBuffer, debug=debug)
+
+    except getopt.GetoptError as err:
+        print('Arguments parser error, try -h')
+        print('\t' + str(err))
+
+    except KeyboardInterrupt:
+        print("\r\nInterrupted.\r\n")
+
+    except Exception as err:
+        print(traceback.format_exc())
+        print(str(err))
+
+    finally:
+        if "outputFile" in locals():
+            outputFile.close()
+            print()
+            print('Done. Output file generated "%s".' % outputFileName)
+
+if __name__ == '__main__':
+    main(sys.argv[1:])
