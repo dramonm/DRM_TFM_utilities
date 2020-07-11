@@ -41,7 +41,6 @@ class TweetManager:
 
         all_usernames = []
         usernames_per_batch = 20
-
         if hasattr(tweetCriteria, 'username'):
             if type(tweetCriteria.username) == str or not hasattr(tweetCriteria.username, '__iter__'):
                 tweetCriteria.username = [tweetCriteria.username]
@@ -63,9 +62,7 @@ class TweetManager:
 
             active = True
             while active:
-
                 json = TweetManager.getJsonResponse(tweetCriteria, refreshCursor, cookieJar, proxy, user_agent, debug=debug)
-
                 if len(json['items_html'].strip()) == 0:
                     break
 
@@ -79,10 +76,9 @@ class TweetManager:
                     break
 
                 for tweetHTML in tweets:
-
                     tweetPQ = PyQuery(tweetHTML)
                     tweet = models.Tweet()
-
+                    #######     NEW ATTRIBUTES MATCHING THE OUTPUT OF T-HOARDER_KIT     ######
                     # INITIALIZE attr
                     tweet.idTweet = ''
                     tweet.date = ''
@@ -129,7 +125,8 @@ class TweetManager:
                     tweet.permalink = 'https://twitter.com' + tweetPQ.attr("data-permalink-path")
                     tweet.authorScreenName = tweetPQ.attr("data-name")
 
-
+                    # CHECKS IF THE TWEET IS A RETWEET BY THE ELEMENT SPAN WITH CLASS JS-RETWEEET-TEXT
+                    # IF IT IS, FILL OUT THE ATTRIBUTES
                     isRetweet = tweetPQ("span.js-retweet-text").size() > 0
                     if isRetweet:
                         tweet.userRetweeted = '@' + usernames[0]
@@ -162,7 +159,9 @@ class TweetManager:
 
                     tweet.tweetUrls = ",".join(urls)
                     tweet.quote = ''
+                    # CHECKS IF THE TWEET IS A REPLY
                     isReply = tweetPQ.attr("data-is-reply-to") #Contains true or nothing
+                    # CHECKS IF THE TWEET IS A QUOTE
                     isQuoted = tweetPQ("div.QuoteTweet-container").size() > 0
                     if isQuoted:
                         tweet.tweeetsRelation = 'Quote'
@@ -172,6 +171,7 @@ class TweetManager:
                         tweet.quotedTweetId = tweetPQ("div.QuoteTweet-container div.QuoteTweet-innerContainer").attr("data-item-id")
                         tweet.userQuoted  = '@' + tweetPQ("div.QuoteTweet-container div").attr("data-screen-name")
 
+                    # THE TWEET RELATION HIERARCHY IS RT > REPLY > QUOTE, IF IT IS A RT BUT ALSO A QUOTE, IT IS A RT, AND THE SAME APPLIES TO THE REST
                     if isReply:
                         tweet.tweeetsRelation = 'Reply'
                     if isRetweet:

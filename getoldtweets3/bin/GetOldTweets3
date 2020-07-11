@@ -226,6 +226,7 @@ def main(argv):
             #csvFile.writerow(['date', 'username', 'to', 'replies', 'retweets',
             #                  'favorites', 'text', 'geo', 'mentions', 'hashtags',
             #                  'id', 'permalink'])
+            # DEFINITION OF THE NEW CSV OUTPUT FILE FIELDS IN ORDER TO MATCH T-HOARDER_KIT OUTPUT
             csvFile.writerow(['id tweet', 'date', 'author', 'text', 'app', 'id user', 'followers',
                                 'following', 'stauses', 'location', 'urls', 'geolocation', 'name',
                                 'description', 'url_media', 'type media', 'quoted', 'relation',
@@ -237,6 +238,7 @@ def main(argv):
                 nonlocal cnt
 
                 for t in tweets:
+                    # NEW TWEET FIELDS IN ORDER TO MATCH T-HOARDER_KIT OUTPUT
                     data = [t.idTweet,
                         t.date.strftime("%Y-%m-%d %H:%M:%S"),
                         t.author,
